@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <title>3D Flip Card css</title>
+    <link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.5.0/css/bootstrap.min.css'>
+    <link rel='stylesheet' href='https://unicons.iconscout.com/release/v2.1.9/css/unicons.css'>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+
+  <body>
+
+	<div class="section over-hide">
+		<div class="container">
+			<div class="row full-height justify-content-center">
+				<div class="col-12 text-center align-self-center py-5">
+					<div class="section text-center py-5 py-md-0">
+
+						<!-- Language toggle -->
+						<input class="language" type="checkbox" id="language" name="language"/>
+						<label for="language"><span class="block-diff">EN<span class="float-right">RU</span></span></label>
+
+						<!-- Card side toggle -->
+			          	<input class="pricing" type="checkbox" id="pricing" name="pricing"/>
+			          	<label for="pricing"><span class="block-diff"><span id="toggle-front">kayaking</span><span class="float-right" id="toggle-back">camping</span></span></label>
+
+						<div class="card-3d-wrap mx-auto">
+							<div class="card-3d-wrapper">
+								<div class="card-front">
+									<div class="pricing-wrap">
+										<h4 class="mb-5" id="front-title">Kayaking</h4>
+										<h2 class="mb-2"><sup>$</sup><span id="front-price">39 / 4</span><sup id="front-unit">hrs</sup></h2>
+										<p class="mb-4" id="front-per">per person</p>
+										<p class="mb-1"><i class="uil uil-location-pin-alt size-22"></i></p>
+										<p class="mb-4" id="front-location">Drina, Serbia</p>
+										<a href="#0" class="link" id="front-btn">Choose Date</a>
+										<div class="img-wrap img-2">
+											<img src="https://assets.codepen.io/1462889/sea.png" alt="">
+										</div>
+										<div class="img-wrap img-1">
+											<img src="https://assets.codepen.io/1462889/kayak.png" alt="">
+										</div>
+										<div class="img-wrap img-3">
+											<img src="https://assets.codepen.io/1462889/water.png" alt="">
+										</div>
+										<div class="img-wrap img-6">
+											<img src="https://assets.codepen.io/1462889/Stone.png" alt="">
+										</div>
+			      					</div>
+			      				</div>
+								<div class="card-back">
+									<div class="pricing-wrap">
+										<h4 class="mb-5" id="back-title">Camping</h4>
+										<h2 class="mb-2"><sup>$</sup><span id="back-price">29 / 8</span><sup id="back-unit">hrs</sup></h2>
+										<p class="mb-4" id="back-per">per person</p>
+										<p class="mb-1"><i class="uil uil-location-pin-alt size-22"></i></p>
+										<p class="mb-4" id="back-location">Tara, Serbia</p>
+										<a href="#0" class="link" id="back-btn">Choose Date</a>
+										<div class="img-wrap img-2">
+											<img src="https://assets.codepen.io/1462889/grass.png" alt="">
+										</div>
+										<div class="img-wrap img-4">
+											<img src="https://assets.codepen.io/1462889/camp.png" alt="">
+										</div>
+										<div class="img-wrap img-5">
+											<img src="https://assets.codepen.io/1462889/Ivy.png" alt="">
+										</div>
+										<div class="img-wrap img-7">
+											<img src="https://assets.codepen.io/1462889/IvyRock.png" alt="">
+										</div>
+			      					</div>
+			      				</div>
+			      			</div>
+			      		</div>
+			      	</div>
+		      	</div>
+	      	</div>
+	    </div>
+	</div>
+
+	<script>
+	const translations = {
+		en: {
+			frontTitle: 'Kayaking',
+			frontPrice: '39 / 4',
+			frontUnit: 'hrs',
+			frontPer: 'per person',
+			frontLocation: 'Drina, Serbia',
+			frontBtn: 'Choose Date',
+			backTitle: 'Camping',
+			backPrice: '29 / 8',
+			backUnit: 'hrs',
+			backPer: 'per person',
+			backLocation: 'Tara, Serbia',
+			backBtn: 'Choose Date',
+			toggleFront: 'kayaking',
+			toggleBack: 'camping',
+		},
+		ru: {
+			frontTitle: 'Каякинг',
+			frontPrice: '39 / 4',
+			frontUnit: 'ч',
+			frontPer: 'с человека',
+			frontLocation: 'Дрина, Сербия',
+			frontBtn: 'Выбрать дату',
+			backTitle: 'Кемпинг',
+			backPrice: '29 / 8',
+			backUnit: 'ч',
+			backPer: 'с человека',
+			backLocation: 'Тара, Сербия',
+			backBtn: 'Выбрать дату',
+			toggleFront: 'каякинг',
+			toggleBack: 'кемпинг',
+		}
+	};
+
+	function applyLang(lang) {
+		const t = translations[lang];
+		document.getElementById('front-title').textContent    = t.frontTitle;
+		document.getElementById('front-price').textContent    = t.frontPrice;
+		document.getElementById('front-unit').textContent     = t.frontUnit;
+		document.getElementById('front-per').textContent      = t.frontPer;
+		document.getElementById('front-location').textContent = t.frontLocation;
+		document.getElementById('front-btn').textContent      = t.frontBtn;
+		document.getElementById('back-title').textContent     = t.backTitle;
+		document.getElementById('back-price').textContent     = t.backPrice;
+		document.getElementById('back-unit').textContent      = t.backUnit;
+		document.getElementById('back-per').textContent       = t.backPer;
+		document.getElementById('back-location').textContent  = t.backLocation;
+		document.getElementById('back-btn').textContent       = t.backBtn;
+		document.getElementById('toggle-front').textContent   = t.toggleFront;
+		document.getElementById('toggle-back').textContent    = t.toggleBack;
+	}
+
+	document.getElementById('language').addEventListener('change', function () {
+		applyLang(this.checked ? 'ru' : 'en');
+	});
+	</script>
+
+  </body>
+
+</html>
