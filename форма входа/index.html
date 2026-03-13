@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Вход — Chandelier</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Атмосфера комнаты -->
+  <div class="room"></div>
+  <div class="chandelier-glow"></div>
+  <div class="light-cone"></div>
+  <div class="particles"></div>
+
+  <!-- Люстра — SVG монтируется из chandelier.js -->
+  <div class="chandelier-wrap"></div>
+  <script src="chandelier.js"></script>
+
+  <!-- Форма логина — появляется из темноты -->
+  <div class="login-card">
+    <div class="corner corner-tl"></div>
+    <div class="corner corner-tr"></div>
+    <div class="corner corner-bl"></div>
+    <div class="corner corner-br"></div>
+
+    <div class="card-emblem">✦</div>
+    <div class="card-title">Добро пожаловать</div>
+    <div class="card-sub">Войдите в свой аккаунт</div>
+    <div class="divider">
+      <span class="divider-line"></span>
+      <span class="divider-gem">◆</span>
+      <span class="divider-line"></span>
+    </div>
+
+    <div class="field">
+      <label for="email">Электронная почта</label>
+      <input type="email" id="email" placeholder="you@example.com" autocomplete="off">
+      <div class="field-line"></div>
+    </div>
+
+    <div class="field">
+      <label for="password">Пароль</label>
+      <input type="password" id="password" placeholder="••••••••">
+      <div class="field-line"></div>
+    </div>
+
+    <button class="btn-login" type="button">
+      <span class="btn-text">Войти</span>
+      <span class="btn-glow"></span>
+    </button>
+
+    <a href="#" class="forgot">Забыли пароль?</a>
+  </div>
+
+  <!-- Ползунок — всегда виден, управляет светом -->
+  <div class="slider-wrap">
+    <div class="slider-label-row">
+      <span class="slider-icon dim">🕯</span>
+      <span class="slider-label">Яркость люстры</span>
+      <span class="slider-pct" id="bright-pct">0%</span>
+      <span class="slider-icon bright">✦</span>
+    </div>
+    <input type="range" id="brightness" min="0" max="100" value="0">
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
