@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Процедурная плата</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0e0a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Courier New', monospace;
+  }
+  h1 {
+    color: #1aff6e;
+    font-size: 13px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    margin-bottom: 18px;
+    opacity: 0.6;
+  }
+  canvas {
+    display: block;
+    border: 1px solid #1a2e1a;
+    box-shadow: 0 0 60px rgba(26,255,110,0.08), 0 0 120px rgba(0,80,30,0.12);
+  }
+  #status {
+    color: #1aff6e;
+    font-size: 11px;
+    letter-spacing: 3px;
+    margin-top: 14px;
+    opacity: 0.5;
+    min-height: 16px;
+  }
+</style>
+</head>
+<body>
+<h1>PCB — Процедурная генерация</h1>
+<canvas id="c" width="800" height="800"></canvas>
+<div id="status">ИНИЦИАЛИЗАЦИЯ...</div>
+ 
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 800, H = 800;
+const GRID = 16;
+const COLS = W / GRID;
+const ROWS = H / GRID;
+const status = document.getElementById('status');
+ 
+// Сетка занятых клеток
+const occupied = new Set();
+const key = (x,y) => `${x},${y}`;
+ 
+// Все трассы: [{points:[...], color, width, drawn, pulses:[]}]
+const traces = [];
+// Компоненты: [{type, x, y, w, h, label}]
+const components = [];
+ 
+// Цвета трасс
+const TRACE_COLORS = ['#1aff6e','#00e5b0','#22ff99','#0affaa','#33ff77'];
+const PULSE_COLORS = ['#ffffff','#aaffdd','#80ffcc','#eeffaa'];
+ 
+let phase = 'drawing'; // 'drawing' | 'done'
+let drawQueue = []; // очередь трасс для отрисовки
+let drawTimer = 0;
+ 
+// ---- ГЕНЕРАЦИЯ ----
+ 
+function randInt(a,b){ return a + Math.floor(Math.random()*(b-a+1)); }
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+ 
+function gx(col){ return col*GRID + GRID/2; }
+function gy(row){ return row*GRID + GRID/2; }
+ 
+// Рисуем центральный чип
+function placeCentralChip(){
+  const cx = Math.floor(COLS/2), cy = Math.floor(ROWS/2);
+  const hw = 3, hh = 3;
+  for(let dx=-hw; dx<=hw; dx++)
+    for(let dy=-hh; dy<=hh; dy++)
+      occupied.add(key(cx+dx, cy+dy));
+  const comp = {type:'cpu', gx:cx, gy:cy, hw, hh,
+    label:'MCU-X1', pins: generatePins(cx,cy,hw,hh)};
+  components.push(comp);
+  return comp;
+}
+ 
+function generatePins(cx,cy,hw,hh){
+  const pins=[];
+  // левый и правый борта
+  for(let dy=-hh+1; dy<=hh-1; dy+=1){
+    pins.push({x:cx-hw-1, y:cy+dy, dir:[-1,0]});
+    pins.push({x:cx+hw+1, y:cy+dy, dir:[1,0]});
+  }
+  // верх и низ
+  for(let dx=-hw+1; dx<=hw-1; dx+=1){
+    pins.push({x:cx+dx, y:cy-hh-1, dir:[0,-1]});
+    pins.push({x:cx+dx, y:cy+hh+1, dir:[0,1]});
+  }
+  return pins;
+}
+ 
+// Генерируем трассы от пинов
+function generateTraces(chip){
+  const {gx:cx, gy:cy} = chip;
+  for(const pin of chip.pins){
+    if(Math.random()<0.05) continue; // часть пинов не используется
+    const trace = growTrace(pin.x, pin.y, pin.dir, 0);
+    if(trace && trace.points.length>2){
+      traces.push({
+        points: trace.points,
+        color: pick(TRACE_COLORS),
+        width: Math.random()<0.3 ? 2.5 : 1.5,
+        progress: 0,
+        totalLen: 0,
+        segLens: [],
+        pulses: []
+      });
+    }
+  }
+}
+ 
+function growTrace(startX, startY, startDir, depth){
+  if(depth>9) return null;
+  const points = [{x:startX, y:startY}];
+  let x=startX, y=startY;
+  let [dx,dy] = startDir;
+  const maxSteps = randInt(6,22);
+  occupied.add(key(x,y));
+ 
+  for(let step=0; step<maxSteps; step++){
+    // возможный поворот
+    if(step>1 && Math.random()<0.35){
+      const turns = getDirs(dx,dy);
+      [dx,dy] = pick(turns);
+    }
+    const nx=x+dx, ny=y+dy;
+    if(nx<1||nx>COLS-2||ny<1||ny>ROWS-2) break;
+    if(occupied.has(key(nx,ny))) break;
+    occupied.add(key(nx,ny));
+    x=nx; y=ny;
+    points.push({x,y});
+ 
+    // иногда ставим компонент и разветвляем
+    if(step>2 && Math.random()<0.18){
+      maybeComponent(x,y);
+      // ответвление
+      if(depth<5 && Math.random()<0.7){
+        const bDirs = getDirs(dx,dy);
+        const bDir = pick(bDirs);
+        const sub = growTrace(x,y, bDir, depth+1);
+        if(sub && sub.points.length>2){
+          traces.push({
+            points: sub.points,
+            color: pick(TRACE_COLORS),
+            width: Math.random()<0.2 ? 2 : 1.2,
+            progress: 0,
+            totalLen: 0,
+            segLens: [],
+            pulses: []
+          });
+        }
+      }
+    }
+  }
+  // конечная площадка
+  maybeComponent(x,y);
+  return {points};
+}
+ 
+function getDirs(dx,dy){
+  if(dx!==0) return [[0,-1],[0,1]];
+  return [[-1,0],[1,0]];
+}
+ 
+function maybeComponent(gxc,gyc){
+  if(Math.random()>0.22) return;
+  const types=['resistor','cap','chip_small','via'];
+  const t=pick(types);
+  // проверяем свободу
+  if(occupied.has(key(gxc+1,gyc))||occupied.has(key(gxc-1,gyc))) return;
+  const labels={'resistor':'R','cap':'C','chip_small':'U','via':'◎'};
+  components.push({type:t, gx:gxc, gy:gyc, label: labels[t]+(randInt(1,99))});
+}
+ 
+// Вычислить длины сегментов трассы
+function computeLengths(trace){
+  const pts = trace.points;
+  let total=0;
+  const segs=[];
+  for(let i=1;i<pts.length;i++){
+    const dx=(pts[i].x-pts[i-1].x)*GRID;
+    const dy=(pts[i].y-pts[i-1].y)*GRID;
+    const l=Math.sqrt(dx*dx+dy*dy);
+    segs.push(l);
+    total+=l;
+  }
+  trace.segLens=segs;
+  trace.totalLen=total;
+}
+ 
+// ---- РЕНДЕР ----
+ 
+function drawBackground(){
+  ctx.fillStyle='#050a05';
+  ctx.fillRect(0,0,W,H);
+  // тонкая сетка
+  ctx.strokeStyle='rgba(26,255,110,0.03)';
+  ctx.lineWidth=0.5;
+  for(let i=0;i<=COLS;i++){
+    ctx.beginPath(); ctx.moveTo(i*GRID,0); ctx.lineTo(i*GRID,H); ctx.stroke();
+  }
+  for(let j=0;j<=ROWS;j++){
+    ctx.beginPath(); ctx.moveTo(0,j*GRID); ctx.lineTo(W,j*GRID); ctx.stroke();
+  }
+}
+ 
+function drawCentralChip(chip){
+  const {gx:cx,gy:cy,hw,hh} = chip;
+  const px=cx*GRID, py=cy*GRID;
+  const pw=(hw*2+1)*GRID, ph=(hh*2+1)*GRID;
+  const ox=px-hw*GRID, oy=py-hh*GRID;
+ 
+  // тень
+  ctx.shadowColor='#1aff6e';
+  ctx.shadowBlur=24;
+ 
+  // корпус
+  ctx.fillStyle='#0d1f0d';
+  ctx.strokeStyle='#1aff6e';
+  ctx.lineWidth=1.5;
+  ctx.fillRect(ox,oy,pw,ph);
+  ctx.strokeRect(ox,oy,pw,ph);
+ 
+  // внутренние линии
+  ctx.strokeStyle='rgba(26,255,110,0.2)';
+  ctx.lineWidth=0.5;
+  for(let i=1;i<=4;i++){
+    ctx.beginPath();
+    ctx.moveTo(ox+6, oy+i*(ph/5));
+    ctx.lineTo(ox+pw-6, oy+i*(ph/5));
+    ctx.stroke();
+  }
+ 
+  // лейбл
+  ctx.shadowBlur=0;
+  ctx.fillStyle='#1aff6e';
+  ctx.font='bold 9px Courier New';
+  ctx.textAlign='center';
+  ctx.fillText('MCU-X1', px+GRID/2, py+GRID/2+3);
+ 
+  // точка первого пина
+  ctx.fillStyle='#ffffff';
+  ctx.beginPath();
+  ctx.arc(ox+4,oy+4,2,0,Math.PI*2);
+  ctx.fill();
+}
+ 
+function drawTrace(trace){
+  const pts=trace.points;
+  if(pts.length<2) return;
+  const prog=trace.progress; // 0..totalLen
+  ctx.shadowColor=trace.color;
+  ctx.shadowBlur=6;
+  ctx.strokeStyle=trace.color;
+  ctx.lineWidth=trace.width;
+  ctx.lineCap='round';
+  ctx.lineJoin='round';
+  ctx.beginPath();
+  ctx.moveTo(gx(pts[0].x), gy(pts[0].y));
+ 
+  let remaining=prog;
+  for(let i=0;i<trace.segLens.length;i++){
+    const l=trace.segLens[i];
+    if(remaining<=0) break;
+    const frac=Math.min(1,remaining/l);
+    const x0=gx(pts[i].x), y0=gy(pts[i].y);
+    const x1=gx(pts[i+1].x), y1=gy(pts[i+1].y);
+    ctx.lineTo(x0+(x1-x0)*frac, y0+(y1-y0)*frac);
+    remaining-=l;
+  }
+  ctx.stroke();
+  ctx.shadowBlur=0;
+ 
+  // пады на конце
+  if(prog>=trace.totalLen){
+    const ep=pts[pts.length-1];
+    ctx.fillStyle=trace.color;
+    ctx.shadowColor=trace.color;
+    ctx.shadowBlur=8;
+    ctx.beginPath();
+    ctx.arc(gx(ep.x),gy(ep.y),3,0,Math.PI*2);
+    ctx.fill();
+    ctx.shadowBlur=0;
+  }
+}
+ 
+function drawPulse(trace, pulse){
+  const pts=trace.points;
+  // pulse.pos: 0..totalLen
+  const pos=pulse.pos;
+  let remaining=pos;
+  let px=gx(pts[0].x), py=gy(pts[0].y);
+  for(let i=0;i<trace.segLens.length;i++){
+    const l=trace.segLens[i];
+    if(remaining<=l){
+      const frac=remaining/l;
+      const x0=gx(pts[i].x), y0=gy(pts[i].y);
+      const x1=gx(pts[i+1].x), y1=gy(pts[i+1].y);
+      px=x0+(x1-x0)*frac;
+      py=y0+(y1-y0)*frac;
+      break;
+    }
+    remaining-=l;
+  }
+  const r=pulse.r || 3;
+  const g=ctx.createRadialGradient(px,py,0,px,py,r*3);
+  g.addColorStop(0,'rgba(255,255,255,0.95)');
+  g.addColorStop(0.4, pulse.color+'cc');
+  g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g;
+  ctx.beginPath();
+  ctx.arc(px,py,r*3,0,Math.PI*2);
+  ctx.fill();
+}
+ 
+function drawComponent(comp){
+  const px=gx(comp.gx), py=gy(comp.gy);
+  ctx.shadowBlur=0;
+  if(comp.type==='cpu'){
+    drawCentralChip(comp); return;
+  }
+  if(comp.type==='resistor'){
+    ctx.strokeStyle='#1aff6e';
+    ctx.fillStyle='#0d1a0d';
+    ctx.lineWidth=1;
+    ctx.fillRect(px-7,py-4,14,8);
+    ctx.strokeRect(px-7,py-4,14,8);
+    // полосы
+    ctx.strokeStyle='rgba(255,180,60,0.7)';
+    ctx.lineWidth=1;
+    for(let s=-2;s<=2;s+=2){
+      ctx.beginPath();ctx.moveTo(px+s,py-4);ctx.lineTo(px+s,py+4);ctx.stroke();
+    }
+    return;
+  }
+  if(comp.type==='cap'){
+    ctx.strokeStyle='#00e5b0';
+    ctx.fillStyle='#081a14';
+    ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.arc(px,py,5,0,Math.PI*2);
+    ctx.fill(); ctx.stroke();
+    ctx.strokeStyle='rgba(0,229,176,0.5)';
+    ctx.lineWidth=0.5;
+    ctx.beginPath();ctx.moveTo(px-3,py);ctx.lineTo(px+3,py);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(px,py-3);ctx.lineTo(px,py+3);ctx.stroke();
+    return;
+  }
+  if(comp.type==='chip_small'){
+    ctx.fillStyle='#0c1a0c';
+    ctx.strokeStyle='#1aff6e';
+    ctx.lineWidth=1;
+    ctx.fillRect(px-8,py-6,16,12);
+    ctx.strokeRect(px-8,py-6,16,12);
+    ctx.fillStyle='rgba(26,255,110,0.5)';
+    ctx.font='6px Courier New';
+    ctx.textAlign='center';
+    ctx.fillText(comp.label||'IC',px,py+2);
+    return;
+  }
+  if(comp.type==='via'){
+    ctx.strokeStyle='rgba(26,255,110,0.6)';
+    ctx.fillStyle='#1aff6e22';
+    ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(px,py,4,0,Math.PI*2);
+    ctx.fill(); ctx.stroke();
+    ctx.strokeStyle='rgba(26,255,110,0.3)';
+    ctx.lineWidth=0.5;
+    ctx.beginPath();ctx.arc(px,py,6.5,0,Math.PI*2);ctx.stroke();
+  }
+}
+ 
+// ---- АНИМАЦИЯ ----
+ 
+let chip;
+const DRAW_SPEED = 3.5; // пикселей за кадр на трассу
+let allDone = false;
+let pulseTimer = 0;
+ 
+function launchPulse(){
+  const t = pick(traces.filter(t=>t.totalLen>0));
+  if(!t) return;
+  t.pulses.push({
+    pos:0,
+    speed: randInt(3,7),
+    color: pick(PULSE_COLORS),
+    r: Math.random()<0.3 ? 4 : 2.5
+  });
+}
+ 
+let lastTime=0;
+function animate(ts){
+  const dt = Math.min(ts-lastTime, 40);
+  lastTime=ts;
+ 
+  drawBackground();
+ 
+  // компоненты (под трассами)
+  for(const c of components){
+    if(c.type!=='cpu') drawComponent(c);
+  }
+ 
+  // трассы
+  let allDrawn=true;
+  for(const t of traces){
+    if(t.progress < t.totalLen){
+      t.progress = Math.min(t.totalLen, t.progress + DRAW_SPEED*(dt/16));
+      allDrawn=false;
+    }
+    drawTrace(t);
+ 
+    // пульсы
+    for(let i=t.pulses.length-1;i>=0;i--){
+      const p=t.pulses[i];
+      drawPulse(t,p);
+      p.pos+=p.speed*(dt/16);
+      if(p.pos>t.totalLen) t.pulses.splice(i,1);
+    }
+  }
+ 
+  // центральный чип поверх
+  if(chip) drawCentralChip(chip); // chip теперь сам компонент с gx,gy
+ 
+  if(allDrawn && !allDone){
+    allDone=true;
+    status.textContent='СИСТЕМА АКТИВНА — ПЕРЕДАЧА ДАННЫХ';
+  }
+ 
+  if(allDone){
+    pulseTimer+=dt;
+    if(pulseTimer>220){
+      pulseTimer=0;
+      if(Math.random()<0.6) launchPulse();
+    }
+  } else {
+    const pct = Math.round(traces.reduce((s,t)=>s+(t.totalLen>0?t.progress/t.totalLen:0),0)/traces.length*100);
+    status.textContent = `ПРОКЛАДКА ТРАСС... ${pct}%`;
+  }
+ 
+  requestAnimationFrame(animate);
+}
+ 
+// ---- СТАРТ ----
+ 
+function init(){
+  chip = placeCentralChip();
+  generateTraces(chip);
+  for(const t of traces) computeLengths(t);
+  // перемешиваем очередь отрисовки
+  traces.sort(()=>Math.random()-0.5);
+  requestAnimationFrame(animate);
+}
+ 
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DNA → Code</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #020408;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="800" height="800"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const W = 800, H = 800;
+
+// ── Layout ─────────────────────────────────────────────────────
+const HELIX_CX  = 195;   // helix center X
+const DIVIDER_X = 385;   // separator X
+const PANEL_X   = 400;   // code panel text start X
+const DECODE_Y  = 400;   // Y where rungs get decoded
+
+// ── Helix ──────────────────────────────────────────────────────
+const AMP       = 82;    // sine amplitude (px)
+const PERIOD    = 175;   // px per full revolution
+const RUNG_STEP = 18;    // px between rungs
+const SPD       = 1.0;   // scroll px/frame
+
+// strand colors
+const S1 = '#00ffee';
+const S2 = '#ff00aa';
+
+// base-pair color pairs [left-half, right-half]
+const BP = [
+  ['#ff3366', '#ff9933'],
+  ['#00ffcc', '#0099ff'],
+  ['#ffee00', '#ff44bb'],
+  ['#44ff99', '#aa44ff'],
+];
+
+// ── Code snippets ──────────────────────────────────────────────
+const SNIP = [
+  ['const genome = new DoubleHelix();',  '#00ffee'],
+  ['function transcribe(strand) {',      '#ff00aa'],
+  ['  return strand.toRNA();',           '#aaffee'],
+  ['}',                                  '#445566'],
+  ['if (codon === "ATG") start();',      '#ffee00'],
+  ['let protein = aminoChain();',        '#00ffcc'],
+  ['DNA.unzip(temperature = 94);',       '#ff6633'],
+  ['RNA.polymerase(dir = "5→3");',       '#ff99ff'],
+  ['class Chromosome extends DNA {',     '#00ffee'],
+  ['  replicate() { return copy; }',     '#aaffee'],
+  ['ribosome.translate(mRNA);',          '#ffcc00'],
+  ['const codon = seq.slice(i, 3);',    '#33ff99'],
+  ['import { ACGT } from "genome";',    '#9966ff'],
+  ['helix.denature(T > 95.0);',         '#ff3366'],
+  ['return strand.complement();',        '#00ccff'],
+  ['// A — T  (2 hydrogen bonds)',       '#334455'],
+  ['// G — C  (3 hydrogen bonds)',       '#334455'],
+  ['mutation.rate = 1.2e-9;',           '#ffee00'],
+  ['cell.divide(mode = "mitosis");',    '#00ffcc'],
+  ['protein.fold(deltaG = -12.3);',     '#ff6633'],
+  ['export default Chromosome;',         '#ff99ff'],
+  ['base.pair(bonds = 3);',             '#33ff99'],
+  ['polymerase.extend(prime = 3);',     '#9966ff'],
+  ['SEQUENCE = "ATCGGCTAGCGAT";',       '#ffee00'],
+  ['splice(intron, exon);',             '#00ffcc'],
+  ['const mRNA = DNA.transcribe();',    '#ff00aa'],
+  ['amino = CODON_TABLE[codon];',       '#00ffee'],
+  ['replication.fork(origin);',         '#ff6633'],
+];
+
+// ── State ──────────────────────────────────────────────────────
+let scroll      = 0;
+let rotOffset   = 0;   // rotation around helix axis
+let lastRung    = -999;
+let snippetIdx  = 0;
+const lines     = []; // decoded code lines
+
+// ── Code line lifecycle ────────────────────────────────────────
+function spawnLine() {
+  const [text, color] = SNIP[snippetIdx % SNIP.length];
+  snippetIdx++;
+  lines.push({ text, color, x: PANEL_X + 14, y: DECODE_Y + 6,
+               alpha: 0, vy: -0.65, age: 0, phase: 'in' });
+}
+
+function checkDecode() {
+  const rung = Math.floor((DECODE_Y + scroll) / RUNG_STEP);
+  if (rung !== lastRung) {
+    lastRung = rung;
+    if (rung % 3 === 0) spawnLine();
+  }
+}
+
+function updateLines() {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i];
+    l.age++;
+    l.y += l.vy;
+    if      (l.phase === 'in')   { l.alpha = Math.min(1, l.alpha + 0.055); if (l.alpha >= 1) l.phase = 'hold'; }
+    else if (l.phase === 'hold') { if (l.age > 210) l.phase = 'out'; }
+    else                         { l.alpha = Math.max(0, l.alpha - 0.014); if (l.alpha <= 0) { lines.splice(i, 1); continue; } }
+    if (l.y < 8) l.phase = 'out';
+  }
+}
+
+// ── Helix path builder ─────────────────────────────────────────
+function buildPath(sign) {
+  ctx.beginPath();
+  for (let ys = -10; ys <= H + 10; ys += 3) {
+    const θ = ((ys + scroll) * Math.PI * 2) / PERIOD + rotOffset;
+    const x = HELIX_CX + sign * AMP * Math.sin(θ);
+    ys === -10 ? ctx.moveTo(x, ys) : ctx.lineTo(x, ys);
+  }
+}
+
+function drawStrand(color, sign) {
+  // wide soft glow
+  buildPath(sign);
+  ctx.strokeStyle = color + '25';
+  ctx.lineWidth   = 11;
+  ctx.lineJoin    = 'round';
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+
+  // crisp neon core
+  buildPath(sign);
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = 18;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = 2.5;
+  ctx.stroke();
+  ctx.shadowBlur  = 0;
+}
+
+// ── Rungs ──────────────────────────────────────────────────────
+function drawRungs() {
+  const minR = Math.floor(scroll / RUNG_STEP) - 1;
+  const maxR = minR + Math.ceil(H / RUNG_STEP) + 2;
+
+  for (let i = minR; i <= maxR; i++) {
+    const yw = i * RUNG_STEP;
+    const ys = yw - scroll;
+    if (ys < -14 || ys > H + 14) continue;
+
+    const θ     = (yw * Math.PI * 2) / PERIOD + rotOffset;
+    const sinθ  = Math.sin(θ);
+    const cosθ  = Math.cos(θ);
+    const alpha = 0.18 + 0.82 * Math.abs(cosθ);
+
+    const x1   = HELIX_CX + AMP * sinθ;
+    const x2   = HELIX_CX - AMP * sinθ;
+    const midX = HELIX_CX;
+
+    const bIdx   = ((i % BP.length) + BP.length) % BP.length;
+    const [c1, c2] = BP[bIdx];
+
+    const atDec  = Math.abs(ys - DECODE_Y) < RUNG_STEP * 0.7;
+    const rAlpha = atDec ? 1.0 : alpha;
+    const blur   = atDec ? 20  : 4;
+    const lw     = atDec ? 2.5 : 1.5;
+    const dr     = atDec ? 5   : 2.5;
+
+    ctx.globalAlpha = rAlpha;
+    ctx.lineWidth   = lw;
+    ctx.lineCap     = 'round';
+
+    // left rung half
+    ctx.shadowColor = c1;
+    ctx.shadowBlur  = blur;
+    ctx.strokeStyle = c1;
+    ctx.beginPath();
+    ctx.moveTo(x1, ys); ctx.lineTo(midX, ys);
+    ctx.stroke();
+
+    // right rung half
+    ctx.shadowColor = c2;
+    ctx.strokeStyle = c2;
+    ctx.beginPath();
+    ctx.moveTo(midX, ys); ctx.lineTo(x2, ys);
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+
+    // nucleotide dots
+    ctx.shadowColor = c1; ctx.shadowBlur = atDec ? 16 : 8;
+    ctx.fillStyle   = c1;
+    ctx.beginPath(); ctx.arc(x1, ys, dr, 0, Math.PI * 2); ctx.fill();
+
+    ctx.shadowColor = c2;
+    ctx.fillStyle   = c2;
+    ctx.beginPath(); ctx.arc(x2, ys, dr, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur  = 0;
+
+    // decode beam shooting right
+    if (atDec) {
+      const t      = 1 - Math.abs(ys - DECODE_Y) / (RUNG_STEP * 0.7);
+      const xStart = Math.max(x1, x2) + 2;
+      const bg     = ctx.createLinearGradient(xStart, ys, DIVIDER_X, ys);
+      bg.addColorStop(0, c2 + 'ff');
+      bg.addColorStop(0.6, '#00ffeeaa');
+      bg.addColorStop(1, '#00ffee00');
+      ctx.strokeStyle  = bg;
+      ctx.lineWidth    = 1.5;
+      ctx.globalAlpha  = t;
+      ctx.beginPath();
+      ctx.moveTo(xStart, ys); ctx.lineTo(DIVIDER_X, ys);
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ── Background ─────────────────────────────────────────────────
+function drawBg() {
+  ctx.fillStyle = 'rgba(2,4,8,0.88)';
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ── Divider ────────────────────────────────────────────────────
+function drawDivider() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0,    'transparent');
+  g.addColorStop(0.12, '#00ffee22');
+  g.addColorStop(0.5,  '#00ffee77');
+  g.addColorStop(0.88, '#00ffee22');
+  g.addColorStop(1,    'transparent');
+  ctx.shadowColor = '#00ffee';
+  ctx.shadowBlur  = 10;
+  ctx.strokeStyle = g;
+  ctx.lineWidth   = 1;
+  ctx.beginPath();
+  ctx.moveTo(DIVIDER_X, 0); ctx.lineTo(DIVIDER_X, H);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+// ── Decode line ────────────────────────────────────────────────
+function drawDecodeLine() {
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 400);
+  const g = ctx.createLinearGradient(0, 0, DIVIDER_X, 0);
+  g.addColorStop(0,   'transparent');
+  g.addColorStop(0.3, `rgba(255,255,255,${0.05 + 0.05 * pulse})`);
+  g.addColorStop(1,   `rgba(0,255,238,${0.35 + 0.2 * pulse})`);
+  ctx.strokeStyle = g;
+  ctx.lineWidth   = 1;
+  ctx.setLineDash([5, 4]);
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath();
+  ctx.moveTo(4, DECODE_Y); ctx.lineTo(DIVIDER_X, DECODE_Y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = `rgba(0,255,238,${0.3 + 0.15 * pulse})`;
+  ctx.font      = '9px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText('◀ DECODE', 6, DECODE_Y - 5);
+}
+
+// ── Code panel ─────────────────────────────────────────────────
+function drawPanel() {
+  // panel bg
+  ctx.fillStyle = 'rgba(0,6,3,0.5)';
+  ctx.fillRect(DIVIDER_X + 1, 0, W - DIVIDER_X - 1, H);
+
+  // header
+  ctx.fillStyle = 'rgba(0,255,238,0.18)';
+  ctx.font      = 'bold 10px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText('// DECODED GENOME SEQUENCE', PANEL_X + 2, 22);
+
+  // underline
+  ctx.strokeStyle = 'rgba(0,255,238,0.1)';
+  ctx.lineWidth   = 1;
+  ctx.beginPath();
+  ctx.moveTo(PANEL_X, 29); ctx.lineTo(W - 10, 29);
+  ctx.stroke();
+
+  // code lines
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    ctx.globalAlpha = l.alpha;
+    ctx.shadowColor = l.color;
+    ctx.shadowBlur  = 9;
+    ctx.fillStyle   = l.color;
+    ctx.font        = '12px Courier New';
+    ctx.textAlign   = 'left';
+    ctx.fillText(l.text, l.x, l.y);
+    ctx.shadowBlur  = 0;
+
+    // blinking cursor on newest active line
+    const newest = (i === lines.length - 1);
+    if (newest && l.phase !== 'out' && Math.floor(Date.now() / 520) % 2 === 0) {
+      const tw = ctx.measureText(l.text).width;
+      ctx.fillStyle = l.color;
+      ctx.fillRect(l.x + tw + 2, l.y - 11, 5, 12);
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
+  // running sequence counter at bottom
+  const pulse2 = 0.2 + 0.1 * Math.sin(Date.now() / 800);
+  ctx.fillStyle = `rgba(0,255,238,${pulse2})`;
+  ctx.font      = '9px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText(`> seq_${String(Math.floor(scroll * 0.5)).padStart(7, '0')}`, PANEL_X + 2, H - 12);
+
+  // row numbers on left edge of panel
+  const visLines = lines.filter(l => l.alpha > 0.05);
+  for (let i = 0; i < visLines.length; i++) {
+    const l = visLines[i];
+    ctx.globalAlpha = l.alpha * 0.3;
+    ctx.fillStyle   = '#00ffee';
+    ctx.font        = '9px Courier New';
+    ctx.textAlign   = 'right';
+    ctx.fillText(String(i + 1).padStart(3, ' '), PANEL_X + 10, l.y);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ── Vignette ───────────────────────────────────────────────────
+function drawVignette() {
+  const r = ctx.createRadialGradient(W / 2, H / 2, H * 0.28, W / 2, H / 2, H * 0.75);
+  r.addColorStop(0, 'transparent');
+  r.addColorStop(1, 'rgba(0,0,0,0.6)');
+  ctx.fillStyle = r;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ── Labels ─────────────────────────────────────────────────────
+function drawHelixLabels() {
+  const t = Date.now();
+  ctx.fillStyle = `rgba(0,255,238,${0.15 + 0.06 * Math.sin(t / 1200)})`;
+  ctx.font      = '9px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('5\'', HELIX_CX, 14);
+  ctx.fillText('3\'', HELIX_CX, H - 6);
+  ctx.fillStyle = `rgba(255,0,170,${0.15 + 0.06 * Math.sin(t / 1200 + 1)})`;
+  ctx.fillText('3\'', HELIX_CX - 6, 14);
+  ctx.fillText('5\'', HELIX_CX - 6, H - 6);
+}
+
+// ── Main loop ──────────────────────────────────────────────────
+function animate() {
+  drawBg();
+  drawRungs();
+  drawStrand(S1,  1);   // strand 1: +sin, cyan
+  drawStrand(S2, -1);   // strand 2: -sin, magenta
+  drawDecodeLine();
+  drawDivider();
+  drawHelixLabels();
+  drawPanel();
+  drawVignette();
+
+  checkDecode();
+  updateLines();
+
+  scroll    += SPD;
+  rotOffset += 0.012;  // вращение вокруг оси
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>
